@@ -1,0 +1,141 @@
+---
+title: " "
+output: html_notebook
+---
+
+```{r loading libraries, include=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo=FALSE, eval=TRUE, results='asis', warning=FALSE, message=FALSE, fig.width=5, fig.height=4, fig.align='center', error = FALSE)
+
+library(readr)#Loading data into R
+library(summarytools)#summary of the data
+library(tidyverse)#Data manipulation
+library(flextable)#Table output
+library(VIM)#Visualizing missing values
+library(naniar)#For handling missing data
+library(mice)#Multiple imputation using chained equation
+library(kableExtra)#Table
+library(ggplot2)#Data visualization
+library(GGally)
+```
+
+Importing data
+```{r loading data, message=FALSE}
+Data = read.csv("train.csv", stringsAsFactors = T)
+# First six rows in the data frame
+head(Data)
+# summary of the data
+dfSummary(Data, graph.col = F)
+```
+
+Checking for duplicates
+```{r duplicates}
+# Checking for duplicates in the key variable
+anyDuplicated(Data$Id)
+```
+
+Handling missing values
+```{r missing values}
+#Is there any missing values 
+any(is.na(Data))
+#Proportion of missing values per variable
+aggr(Data[, colSums(is.na(Data))>0], plot = T)
+#80% of the rows
+miss = 0.8 * nrow(Data)
+#Eliminating variables with more than 80% missing variables
+Data = Data[, !colSums(is.na(Data))>miss]
+#Sum of missing values per variable
+colSums(is.na(Data))[colSums(is.na(Data))>0]
+```
+
+Test if data is MCAR
+```{r}
+# Applying Little's MCAR test
+# The null hypothesis in this test is that the data is MCAR, and the test statistic is a chi-squared value
+#Numerical variables
+Num = Data %>% select(where(is.numeric)) %>% 
+  colnames()
+#mcar_test(Data[Num])#numerical variables
+```
+
+Imputing missing value
+```{r}
+#omitting all rows with missing values
+Data_miss = na.omit(Data)
+
+# Mean imputation
+#Data$variable[is.na(Data$variable)] = mean(Data$variable, na.rm = TRUE)
+
+# Median imputation
+#Data$variable[is.na(Data$variable)] = median(Data$variable, na.rm = TRUE)
+
+# Mode imputation
+#Data$variable[is.na(Data$variable)] = as.character(which.max(table(Data$variable))) # categorical variable
+
+# Create multiple imputations
+#imp = mice(Data, m = 5, method = "pmm")  # Generate 5 imputed datasets
+
+# Extract the imputed datasets
+#imputed_data = complete(imp)  # List of imputed datasets
+```
+
+Checking for Outliers
+```{r}
+# Eliminating outliers
+for (i in Num) {
+  # Identify outliers using IQR method
+  Q1 = quantile(Data_miss[,i], 0.25)
+  Q3 = quantile(Data_miss[,i], 0.75)
+  IQR = Q3 - Q1
+  lower_bound = Q1 - 1.5 * IQR
+  upper_bound = Q3 + 1.5 * IQR
+  
+  #filtering the Dataset 
+  Data_miss_out = Data_miss[which(Data_miss[,i] > lower_bound & 
+                                    Data_miss[,i] < upper_bound),]
+}
+```
+
+
+Test for parametric assumptions 
+- Normality
+- Homogeneity of Variance (Homoscedasticity)
+- Independence
+
+Test for normality
+```{r}
+library(nortest)
+# Test for normality
+ad.test(Data_miss_out$SalePrice)
+```
+
+Test for homogeneity of variance
+```{r}
+library(car)
+# Levene test 
+# Null hypothesis variance is Constant
+leveneTest(SalePrice~SaleCondition, data = Data_miss_out)
+```
+
+Test for independence (parametric test)
+```{r}
+# Null hypothesis variable is independent
+# Independent t test
+t.test(Data_miss_out$LotArea,Data_miss_out$SalePrice)
+# Correlation test
+cor.test(Data_miss_out$LotArea,Data_miss_out$SalePrice, method = "pearson")
+# Correlation matrix plot
+ggpairs(Data_miss_out[Num[2:6]])
+# # One way Analysis of variance 
+aov(SalePrice~SaleCondition, data = Data_miss_out) %>% summary()
+```
+
+Test for independence (Non parametric test)
+```{r}
+# Independent test
+wilcox.test(Data_miss_out$LotArea,Data_miss_out$SalePrice)
+# Correlation test
+cor.test(Data_miss_out$LotArea,Data_miss_out$SalePrice, method = "spearman")
+# One way Analysis of variance
+kruskal.test(SalePrice~SaleCondition, data = Data_miss_out)
+```
+
